@@ -1,12 +1,11 @@
 const { Telegraf, Markup, session } = require("telegraf")
 const express = require("express")
 
-// 🔥 O‘Z MA’LUMOTLARINGIZNI YOZING
+// 🔥 TOKENNI SHU YERGA QO‘YING
 const bot = new Telegraf("8699404271:AAHOlXnkHVxAGhqG4g6LJatZDjKQP2hSzWY")
 
 const ADMIN_ID = 6952175243
 const ADS_CHANNEL = "@Telefon_bozor_Qarshi_n1"
-const CHANNEL_LINK = "https://t.me/Telefon_bozor_Qarshi_n1"
 const RENDER_URL = "https://telegram-bot-ldyk.onrender.com"
 
 const app = express()
@@ -14,29 +13,24 @@ bot.use(session())
 
 const pendingAds = new Map()
 
-// =====================
-// START
-// =====================
+// ================= START =================
 bot.start((ctx) => {
     ctx.reply(
-        "🚀 Botga xush kelibsiz!",
+        "🚀 Xush kelibsiz!",
         Markup.inlineKeyboard([
-            [Markup.button.callback("📢 E’lon berish", "create")]
+            [Markup.button.callback("📢 E’lon berish", "create")],
+            [Markup.button.callback("👤 Profil", "profile")]
         ])
     )
 })
 
-// =====================
-// E’LON YOZISH
-// =====================
+// ================= CREATE =================
 bot.action("create", (ctx) => {
     ctx.session.creating = true
     ctx.reply("📩 E’lon matnini yuboring:")
 })
 
-// =====================
-// MATN QABUL QILISH
-// =====================
+// ================= TEXT =================
 bot.on("text", async (ctx) => {
     if (!ctx.session.creating) return
 
@@ -52,7 +46,7 @@ bot.on("text", async (ctx) => {
 
     await bot.telegram.sendMessage(
         ADMIN_ID,
-        `📢 Yangi e’lon:\n\n${ctx.message.text}\n\n👤 ${ctx.from.first_name}`,
+        `📢 Yangi e’lon:\n\n${ctx.message.text}`,
         Markup.inlineKeyboard([
             [
                 Markup.button.callback("✅ Tasdiqlash", `approve_${adId}`),
@@ -64,13 +58,9 @@ bot.on("text", async (ctx) => {
     ctx.reply("⏳ E’lon adminga yuborildi.")
 })
 
-// =====================
-// TASDIQLASH
-// =====================
+// ================= APPROVE =================
 bot.action(/approve_(.+)/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) {
-        return ctx.reply("❌ Siz admin emassiz")
-    }
+    if (ctx.from.id !== ADMIN_ID) return
 
     const adId = Number(ctx.match[1])
     const ad = pendingAds.get(adId)
@@ -82,7 +72,7 @@ bot.action(/approve_(.+)/, async (ctx) => {
             `📢 YANGI E’LON\n\n${ad.text}\n\n👤 ${ad.name}`
         )
 
-        await bot.telegram.sendMessage(ad.userId, "✅ E’loningiz tasdiqlandi!")
+        await bot.telegram.sendMessage(ad.userId, "✅ E’lon tasdiqlandi!")
 
         pendingAds.delete(adId)
         ctx.editMessageText("✅ Tasdiqlandi.")
@@ -93,27 +83,26 @@ bot.action(/approve_(.+)/, async (ctx) => {
     }
 })
 
-// =====================
-// RAD ETISH
-// =====================
+// ================= REJECT =================
 bot.action(/reject_(.+)/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) {
-        return ctx.reply("❌ Siz admin emassiz")
-    }
+    if (ctx.from.id !== ADMIN_ID) return
 
     const adId = Number(ctx.match[1])
     const ad = pendingAds.get(adId)
     if (!ad) return
 
-    await bot.telegram.sendMessage(ad.userId, "❌ E’loningiz rad etildi.")
+    await bot.telegram.sendMessage(ad.userId, "❌ E’lon rad etildi.")
 
     pendingAds.delete(adId)
     ctx.editMessageText("❌ Rad etildi.")
 })
 
-// =====================
-// WEBHOOK (RENDER)
-// =====================
+// ================= PROFILE =================
+bot.action("profile", (ctx) => {
+    ctx.reply(`👤 Sizning ID: ${ctx.from.id}`)
+})
+
+// ================= WEBHOOK =================
 app.use(bot.webhookCallback("/webhook"))
 
 app.listen(process.env.PORT || 10000, async () => {
