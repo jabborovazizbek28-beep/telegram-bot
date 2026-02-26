@@ -1,42 +1,39 @@
+require("dotenv").config();
+
 const express = require("express");
 const { Telegraf, Markup } = require("telegraf");
 
-// =====================
+// =============================
 // ENV CHECK
-// =====================
+// =============================
 if (!process.env.BOT_TOKEN) {
   console.error("❌ BOT_TOKEN topilmadi!");
   process.exit(1);
 }
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
-
-const CHANNEL = process.env.CHANNEL;   // @channel
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const CHANNEL = process.env.CHANNEL;
 const ADMIN_ID = Number(process.env.ADMIN_ID);
 
+const bot = new Telegraf(BOT_TOKEN);
+
+// =============================
+// EXPRESS (RENDER WEB SERVICE)
+// =============================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// =====================
-// WEB SERVER (RENDER)
-// =====================
 app.get("/", (req, res) => {
-  res.send("🚀 FINAL PRO BOT ONLINE");
+  res.status(200).send("🚀 BOT ONLINE");
 });
 
 app.listen(PORT, () => {
   console.log("🌍 Server port:", PORT);
 });
 
-// =====================
-// MEMORY STORAGE
-// =====================
-const ads = new Map();
-const sessions = new Map();
-
-// =====================
+// =============================
 // SUBSCRIPTION CHECK
-// =====================
+// =============================
 async function isSubscribed(ctx) {
   if (!CHANNEL) return true;
 
@@ -52,17 +49,17 @@ async function isSubscribed(ctx) {
   }
 }
 
-async function requireSub(ctx, next) {
+async function requireSubscription(ctx, next) {
   const ok = await isSubscribed(ctx);
 
   if (!ok) {
     return ctx.reply(
-      "🔒 Kanalga obuna bo‘ling:",
+      "🔒 Botdan foydalanish uchun kanalga obuna bo‘ling:",
       Markup.inlineKeyboard([
         [
           Markup.button.url(
-            "📢 Kanal",
-            `https://t.me/${CHANNEL.replace("@", "")}`
+            "📢 Kanalga o‘tish",
+            `https://t.me/${CHANNEL?.replace("@", "")}`
           )
         ],
         [Markup.button.callback("🔄 Tekshirish", "check_sub")]
@@ -73,14 +70,12 @@ async function requireSub(ctx, next) {
   return next();
 }
 
-// =====================
+// =============================
 // START
-// =====================
-bot.start(requireSub, (ctx) => {
-  sessions.set(ctx.from.id, {});
-
+// =============================
+bot.start(requireSubscription, (ctx) => {
   ctx.reply(
-    "📱 <b>TELEFON MARKET</b>",
+    "💎 <b>PRO MARKET BOT</b>\n\nMenyuni tanlang:",
     {
       parse_mode: "HTML",
       ...Markup.inlineKeyboard([
@@ -90,29 +85,31 @@ bot.start(requireSub, (ctx) => {
   );
 });
 
-// =====================
+// =============================
 // CHECK SUB BUTTON
-// =====================
+// =============================
 bot.action("check_sub", async (ctx) => {
   const ok = await isSubscribed(ctx);
 
-  if (!ok) return ctx.answerCbQuery("❌ Hali obuna yo‘q");
+  if (!ok) return ctx.answerCbQuery("❌ Obuna yo‘q");
 
   ctx.answerCbQuery("✅ Tasdiqlandi");
 });
 
-// =====================
-// NEW AD
-// =====================
-bot.action("new_ad", requireSub, (ctx) => {
+// =============================
+// NEW AD FLOW
+// =============================
+const sessions = new Map();
+
+bot.action("new_ad", requireSubscription, (ctx) => {
   sessions.set(ctx.from.id, { step: "photo" });
   ctx.answerCbQuery();
-  ctx.reply("📸 Telefon rasmini yuboring:");
+  ctx.reply("📸 Rasm yuboring:");
 });
 
-// =====================
+// =============================
 // PHOTO
-// =====================
+// =============================
 bot.on("photo", (ctx) => {
   const session = sessions.get(ctx.from.id);
   if (!session || session.step !== "photo") return;
@@ -123,9 +120,9 @@ bot.on("photo", (ctx) => {
   ctx.reply("📱 Model yozing:");
 });
 
-// =====================
+// =============================
 // TEXT FLOW
-// =====================
+// =============================
 bot.on("text", async (ctx) => {
   const session = sessions.get(ctx.from.id);
   if (!session) return;
@@ -150,15 +147,7 @@ bot.on("text", async (ctx) => {
 
     session.price = text;
 
-    const adId = Date.now().toString();
-
-    ads.set(adId, {
-      ...session,
-      userId: ctx.from.id,
-      likes: 0
-    });
-
-    // ADMIN TASDIQLASH
+    // Admin ga yuborish
     if (ADMIN_ID) {
       await ctx.telegram.sendPhoto(
         ADMIN_ID,
@@ -170,8 +159,8 @@ bot.on("text", async (ctx) => {
             `💰 ${session.price}`,
           ...Markup.inlineKeyboard([
             [
-              Markup.button.callback("✅ Publish", `publish_${adId}`),
-              Markup.button.callback("❌ Reject", `reject_${adId}`)
+              Markup.button.callback("✅ Publish", "publish"),
+              Markup.button.callback("❌ Reject", "reject")
             ]
           ])
         }
@@ -183,52 +172,19 @@ bot.on("text", async (ctx) => {
   }
 });
 
-// =====================
-// ADMIN APPROVE
-// =====================
-bot.action(/publish_(.+)/, async (ctx) => {
-  if (ctx.from.id !== ADMIN_ID)
-    return ctx.answerCbQuery("❌ Ruxsat yo‘q");
-
-  const ad = ads.get(ctx.match[1]);
-  if (!ad) return;
-
-  await ctx.telegram.sendPhoto(
-    CHANNEL,
-    ad.photo,
-    {
-      caption:
-        `📱 ${ad.model}\n\n` +
-        `📝 ${ad.description}\n\n` +
-        `💰 ${ad.price}\n\n` +
-        `❤️ ${ad.likes}`,
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback("❤️ Like", `like_${ctx.match[1]}`)]
-      ])
-    }
-  );
-
-  ctx.answerCbQuery("✅ Published");
-});
-
-// =====================
-// LIKE SYSTEM
-// =====================
-bot.action(/like_(.+)/, (ctx) => {
-  const ad = ads.get(ctx.match[1]);
-  if (!ad) return;
-
-  ad.likes++;
-  ctx.answerCbQuery("❤️ Yoqdi!");
-});
-
-// =====================
+// =============================
+// ERROR HANDLER
+// =============================
 bot.catch((err) => {
-  console.error("🚨 ERROR:", err);
+  console.error("🚨 Error:", err);
 });
+
+// =============================
+// START BOT
+// =============================
+bot.launch();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-bot.launch();
 console.log("💎 FINAL PRO SYSTEM READY");
