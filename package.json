@@ -1,27 +1,14 @@
 {
   "name": "pro-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "Professional Telegram Bot",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "node-telegram-bot-api": "^0.67.0",
+    "express": "^4.19.2",
     "telegraf": "^4.16.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/jabborovazizbek28-beep/pro-bot.git"
-  },
-  "bugs": {
-    "url": "https://github.com/jabborovazizbek28-beep/pro-bot/issues"
-  },
-  "homepage": "https://github.com/jabborovazizbek28-beep/pro-bot#readme"
+  }
 }
