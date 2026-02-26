@@ -1,157 +1,116 @@
-const express = require("express");
-const { Telegraf, Markup } = require("telegraf");
+const { Telegraf, Markup, session } = require("telegraf");
 
-// =====================
-// ENV CHECK
-// =====================
-if (!process.env.BOT_TOKEN) {
-  console.error("❌ BOT_TOKEN yo‘q!");
-  process.exit(1);
-}
+const bot = new Telegraf("YOUR_BOT_TOKEN");
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
-const CHANNEL = process.env.CHANNEL;
-const ADMIN_ID = Number(process.env.ADMIN_ID);
+const CHANNEL = "@Telefon_bozor_Qarshi_n1";
+const ADMIN_ID = 123456789;
 
-// =====================
-// EXPRESS (RENDER UCHUN MUHIM)
-// =====================
-const app = express();
+bot.use(session());
 
-// Render PORT beradi!
-const PORT = process.env.PORT;
-
-app.get("/", (req, res) => {
-  res.send("🚀 Bot ishlayapti");
-});
-
-app.listen(PORT, () => {
-  console.log("🌍 Server port:", PORT);
-});
-
-// =====================
-// SUBSCRIPTION CHECK
-// =====================
-async function isSubscribed(ctx) {
-  if (!CHANNEL) return true;
-
-  try {
-    const member = await ctx.telegram.getChatMember(
-      CHANNEL,
-      ctx.from.id
-    );
-
-    return ["member", "administrator", "creator"].includes(member.status);
-  } catch (err) {
-    console.log("Subscription error:", err.message);
-    return false;
-  }
-}
-
-// =====================
 // START
-// =====================
-bot.start(async (ctx) => {
-  const ok = await isSubscribed(ctx);
+bot.start((ctx) => {
+  ctx.session = {};
+  ctx.reply("📸 E’lon joylash uchun rasm yuboring.");
+});
 
-  if (!ok) {
-    return ctx.reply(
-      "🔒 Botdan foydalanish uchun kanalga obuna bo‘ling.",
-      Markup.inlineKeyboard([
-        [
-          Markup.button.url(
-            "📢 Kanal",
-            `https://t.me/${CHANNEL?.replace("@", "")}`
-          )
-        ],
-        [Markup.button.callback("🔄 Tekshirish", "check_sub")]
-      ])
-    );
+// RASM
+bot.on("photo", (ctx) => {
+  ctx.session.photo =
+    ctx.message.photo[ctx.message.photo.length - 1].file_id;
+
+  ctx.reply("💰 Endi narxni yozing.");
+});
+
+// TEXT (narx + telefon)
+bot.on("text", async (ctx) => {
+
+  if (!ctx.session.photo) return;
+
+  // Narx
+  if (!ctx.session.price) {
+    ctx.session.price = ctx.message.text;
+    return ctx.reply("📞 Endi telefon raqamingizni yozing.");
   }
 
-  ctx.reply(
-    "💎 <b>PRO BOT</b>\n\nMenyuni tanlang:",
+  // Telefon
+  if (!ctx.session.phone) {
+
+    const phone = ctx.message.text;
+
+    if (!/^\+?\d{9,15}$/.test(phone)) {
+      return ctx.reply("❌ Telefon noto‘g‘ri formatda.");
+    }
+
+    ctx.session.phone = phone;
+
+    // Admin ga yuborish
+    await ctx.telegram.sendPhoto(
+      ADMIN_ID,
+      ctx.session.photo,
+      {
+        caption:
+          `📢 YANGI ELON\n\n` +
+          `💰 Narx: ${ctx.session.price}\n` +
+          `📞 Telefon: ${ctx.session.phone}\n\n` +
+          `👤 @${ctx.from.username || "yo'q"}`,
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "✅ Tasdiqlash",
+              `approve_${ctx.chat.id}_${ctx.message.message_id}`
+            ),
+            Markup.button.callback("❌ Bekor", "reject")
+          ]
+        ])
+      }
+    );
+
+    ctx.reply("⏳ E’lon admin tasdig‘ini kutmoqda.");
+
+    ctx.session = {};
+  }
+});
+
+// TASDIQLASH
+bot.action(/approve_(.+)_(.+)/, async (ctx) => {
+
+  const chatId = ctx.match[1];
+
+  const phone = ctx.session?.phone;
+  const price = ctx.session?.price;
+  const photo = ctx.session?.photo;
+
+  await ctx.telegram.sendPhoto(
+    CHANNEL,
+    photo,
     {
-      parse_mode: "HTML",
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback("➕ E’lon joylash", "new_ad")]
-      ])
+      caption:
+        `💰 ${price}\n\n` +
+        `📞 Aloqa: ${phone}`,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "📩 Bog‘lanish",
+              url: `https://t.me/${ctx.from.username || ""}`
+            }
+          ]
+        ]
+      }
     }
   );
+
+  ctx.reply("✅ Kanalga joylandi");
 });
 
-// =====================
-// CHECK BUTTON
-// =====================
-bot.action("check_sub", async (ctx) => {
-  const ok = await isSubscribed(ctx);
-
-  if (!ok) return ctx.answerCbQuery("❌ Obuna yo‘q");
-
-  ctx.answerCbQuery("✅ Tasdiqlandi");
-  ctx.reply("🚀 /start bosing");
+// BEKOR
+bot.action("reject", (ctx) => {
+  ctx.reply("❌ Bekor qilindi");
 });
 
-// =====================
-// SIMPLE AD FLOW
-// =====================
-const sessions = new Map();
-
-bot.action("new_ad", (ctx) => {
-  sessions.set(ctx.from.id, { step: "photo" });
-  ctx.answerCbQuery();
-  ctx.reply("📸 Rasm yuboring:");
-});
-
-bot.on("photo", (ctx) => {
-  const session = sessions.get(ctx.from.id);
-  if (!session || session.step !== "photo") return;
-
-  session.photo = ctx.message.photo.at(-1).file_id;
-  session.step = "model";
-
-  ctx.reply("📱 Model yozing:");
-});
-
-bot.on("text", async (ctx) => {
-  const session = sessions.get(ctx.from.id);
-  if (!session) return;
-
-  const text = ctx.message.text.trim();
-
-  if (session.step === "model") {
-    session.model = text;
-    session.step = "price";
-    return ctx.reply("💰 Narx yozing:");
-  }
-
-  if (session.step === "price") {
-    if (!/^\d+$/.test(text))
-      return ctx.reply("❌ Narx faqat raqam bo‘lsin");
-
-    session.price = text;
-
-    if (ADMIN_ID) {
-      await ctx.telegram.sendPhoto(
-        ADMIN_ID,
-        session.photo,
-        {
-          caption:
-            `📱 ${session.model}\n\n` +
-            `💰 ${session.price}`
-        }
-      );
-    }
-
-    ctx.reply("✅ E’lon yuborildi!");
-    sessions.delete(ctx.from.id);
-  }
-});
-
-// =====================
 bot.launch();
+console.log("🚀 Professional bot ishlayapti");
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-console.log("💎 RENDER READY BOT");
+
+professional darajada qil
