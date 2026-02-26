@@ -1,11 +1,13 @@
 require("dotenv").config()
 const { Telegraf, Markup } = require("telegraf")
 
+// 🔐 BOT
 const bot = new Telegraf(process.env.BOT_TOKEN)
 
+// 👑 ADMIN
 const ADMIN_ID = 6952175243
-const ADS_CHANNEL = "@Telefon_bozor_Qarshi_n1"
 
+// 📦 TEMP STORAGE
 const userState = new Map()
 const pendingAds = new Map()
 
@@ -70,7 +72,7 @@ bot.action(/approve_(.+)/, async (ctx) => {
     if (!ad) return
 
     await bot.telegram.sendMessage(
-        ADS_CHANNEL,
+        process.env.CHANNEL,
         `📢 YANGI E’LON\n\n${ad.text}\n\n👤 ${ad.name}`
     )
 
@@ -103,8 +105,15 @@ bot.action("profile", async (ctx) => {
     await ctx.reply(`👤 Sizning ID: ${ctx.from.id}`)
 })
 
+// ================= ERROR =================
+bot.catch((err) => {
+    console.log("XATO:", err)
+})
+
+// ================= START BOT =================
 bot.launch()
-console.log("🚀 Bot ishladi")
+
+console.log("🚀 BOT RENDER UCHUN ISHLAYAPTI")
 
 process.once("SIGINT", () => bot.stop("SIGINT"))
 process.once("SIGTERM", () => bot.stop("SIGTERM"))
