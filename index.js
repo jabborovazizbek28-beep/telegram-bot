@@ -80,7 +80,7 @@ bot.start(requireSub, (ctx) => {
   sessions.set(ctx.from.id, {});
 
   ctx.reply(
-    "📱 <b>FINAL TELEFON MARKET</b>",
+    "📱 <b>TELEFON MARKET</b>",
     {
       parse_mode: "HTML",
       ...Markup.inlineKeyboard([
