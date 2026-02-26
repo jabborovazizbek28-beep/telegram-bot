@@ -1,9 +1,9 @@
 const express = require("express");
 const { Telegraf, Markup } = require("telegraf");
 
-// =============================
+// =====================
 // ENV CHECK
-// =============================
+// =====================
 if (!process.env.BOT_TOKEN) {
   console.error("❌ BOT_TOKEN topilmadi!");
   process.exit(1);
@@ -12,115 +12,112 @@ if (!process.env.BOT_TOKEN) {
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const CHANNEL = process.env.CHANNEL; // optional
 
-// =============================
-// EXPRESS (RENDER WEB SERVICE)
-// =============================
+// =====================
+// EXPRESS (RENDER)
+// =====================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
-  res.status(200).send("🚀 PRO MAX v2 ONLINE");
+  res.send("📱 TELEFON ELON BOT ISHLAYAPTI");
 });
 
 app.listen(PORT, () => {
   console.log("🌍 Server port:", PORT);
 });
 
-// =============================
-// SUBSCRIPTION CHECK
-// =============================
-async function isSubscribed(ctx) {
-  if (!CHANNEL) return true;
+// =====================
+// MEMORY
+// =====================
+const sessions = {};
 
-  try {
-    const member = await ctx.telegram.getChatMember(
-      CHANNEL,
-      ctx.from.id
-    );
-
-    return ["member", "administrator", "creator"].includes(member.status);
-  } catch {
-    return false;
-  }
-}
-
-async function requireSub(ctx, next) {
-  const ok = await isSubscribed(ctx);
-
-  if (!ok) {
-    return ctx.reply(
-      "🔒 Botdan foydalanish uchun kanalga obuna bo‘ling.",
-      Markup.inlineKeyboard([
-        [
-          Markup.button.url(
-            "📢 Kanal",
-            `https://t.me/${CHANNEL?.replace("@", "")}`
-          )
-        ],
-        [Markup.button.callback("🔄 Tekshirish", "check_sub")]
-      ])
-    );
-  }
-
-  return next();
-}
-
-// =============================
+// =====================
 // START
-// =============================
-bot.start(requireSub, (ctx) => {
+// =====================
+bot.start((ctx) => {
+  sessions[ctx.from.id] = {};
+
   ctx.reply(
-    "🔥 <b>UNIVERSAL PRO MAX v2</b>\n\nAsosiy menyu:",
+    "📱 <b>Telefon E’lon Bot</b>\n\n" +
+    "➕ Yangi e’lon joylash uchun pastdagi tugmani bosing.",
     {
       parse_mode: "HTML",
       ...Markup.inlineKeyboard([
-        [Markup.button.callback("📌 Help", "help")],
-        [Markup.button.callback("ℹ️ About", "about")]
+        [Markup.button.callback("➕ E’lon joylash", "new_ad")]
       ])
     }
   );
 });
 
-// =============================
-// HELP
-// =============================
-bot.action("help", (ctx) => {
+// =====================
+// NEW AD
+// =====================
+bot.action("new_ad", (ctx) => {
+  sessions[ctx.from.id] = { step: "photo" };
   ctx.answerCbQuery();
-  ctx.reply(
-    "📖 Buyruqlar:\n\n/start - Boshlash\n/help - Yordam"
-  );
+  ctx.reply("📸 Telefon rasmini yuboring:");
 });
 
-// =============================
-// ABOUT
-// =============================
-bot.action("about", (ctx) => {
-  ctx.answerCbQuery();
-  ctx.reply("🤖 Bu professional universal template.");
+// =====================
+// PHOTO
+// =====================
+bot.on("photo", (ctx) => {
+  const session = sessions[ctx.from.id];
+  if (!session || session.step !== "photo") return;
+
+  session.photo = ctx.message.photo.at(-1).file_id;
+  session.step = "model";
+
+  ctx.reply("📱 Telefon modelini yozing:");
 });
 
-// =============================
-// CHECK SUB
-// =============================
-bot.action("check_sub", async (ctx) => {
-  const ok = await isSubscribed(ctx);
+// =====================
+// TEXT FLOW
+// =====================
+bot.on("text", async (ctx) => {
+  const session = sessions[ctx.from.id];
+  if (!session) return;
 
-  if (!ok) return ctx.answerCbQuery("❌ Hali obuna yo‘q");
+  const text = ctx.message.text.trim();
 
-  ctx.answerCbQuery("✅ Tasdiqlandi");
+  if (session.step === "model") {
+    session.model = text;
+    session.step = "description";
+    return ctx.reply("📝 Telefon haqida tavsif yozing:");
+  }
+
+  if (session.step === "description") {
+    session.description = text;
+    session.step = "price";
+    return ctx.reply("💰 Narx yozing (faqat raqam):");
+  }
+
+  if (session.step === "price") {
+    if (!/^\d+$/.test(text))
+      return ctx.reply("❌ Narx faqat raqam bo‘lsin");
+
+    session.price = text;
+
+    // Kanalga yuborish (agar CHANNEL bo‘lsa)
+    if (CHANNEL) {
+      await ctx.telegram.sendPhoto(
+        CHANNEL,
+        session.photo,
+        {
+          caption:
+            `📱 <b>${session.model}</b>\n\n` +
+            `📝 ${session.description}\n\n` +
+            `💰 ${session.price} so‘m`,
+          parse_mode: "HTML"
+        }
+      );
+    }
+
+    ctx.reply("✅ E’lon joylandi!");
+    sessions[ctx.from.id] = {};
+  }
 });
 
-// =============================
-// ERROR HANDLER
-// =============================
-bot.catch((err) => {
-  console.error("🚨 ERROR:", err);
-});
-
-// =============================
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
-
+// =====================
 bot.launch();
-
-console.log("💎 PRO MAX v2 READY");
+console.log("🚀 TELEFON ELON BOT READY");
