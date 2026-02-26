@@ -1,205 +1,163 @@
-require("dotenv").config();
-const { Telegraf, Markup, session } = require("telegraf");
+require("dotenv").config()
+const { Telegraf, Markup, session } = require("telegraf")
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
-const CHANNEL = process.env.CHANNEL;
-const ADMIN_ID = Number(process.env.ADMIN_ID);
+const bot = new Telegraf(process.env.BOT_TOKEN)
+bot.use(session())
 
-if (!process.env.BOT_TOKEN) {
-  console.error("❌ BOT_TOKEN yo‘q");
-  process.exit(1);
+const ADMIN_ID = Number(process.env.ADMIN_ID)
+const ADS_CHANNEL = process.env.ADS_CHANNEL
+const CHANNEL_LINK = process.env.CHANNEL_LINK
+
+const pendingAds = new Map()
+
+// 🔒 Faqat e’lon kanaliga obuna tekshiramiz
+async function isSubscribed(ctx) {
+    try {
+        const member = await ctx.telegram.getChatMember(ADS_CHANNEL, ctx.from.id)
+        return member.status !== "left"
+    } catch {
+        return false
+    }
 }
 
-bot.use(session());
-
-const users = new Set();
-const pendingAds = new Map();
-
-/* =========================
-   MAJBURIY OBUNA
-========================= */
-
-async function checkSub(ctx) {
-  try {
-    const member = await ctx.telegram.getChatMember(CHANNEL, ctx.from.id);
-    return ["member", "administrator", "creator"].includes(member.status);
-  } catch {
-    return false;
-  }
-}
-
-/* =========================
-   START
-========================= */
-
-bot.start(async (ctx) => {
-  users.add(ctx.from.id);
-
-  const isSub = await checkSub(ctx);
-
-  if (!isSub) {
-    return ctx.reply(
-      "❌ Botdan foydalanish uchun kanalga obuna bo‘ling!",
-      Markup.inlineKeyboard([
-        [Markup.button.url("📢 Kanal", `https://t.me/${CHANNEL.replace("@","")}`)],
+function subscribeButtons() {
+    return Markup.inlineKeyboard([
+        [Markup.button.url("📢 Kanalga obuna bo‘lish", CHANNEL_LINK)],
         [Markup.button.callback("✅ Tekshirish", "check_sub")]
-      ])
-    );
-  }
+    ])
+}
 
-  ctx.session = {};
-  ctx.reply("📸 E’lon joylash uchun rasm yuboring.");
-});
+function mainMenu() {
+    return Markup.inlineKeyboard([
+        [Markup.button.callback("📢 E’lon berish", "create")],
+        [Markup.button.callback("👤 Profil", "profile")]
+    ])
+}
 
+// 🚀 START
+bot.start(async (ctx) => {
+    const subscribed = await isSubscribed(ctx)
+
+    if (!subscribed) {
+        return ctx.reply(
+            "📢 Botdan foydalanish uchun e’lon kanaliga obuna bo‘ling.",
+            subscribeButtons()
+        )
+    }
+
+    ctx.reply("🚀 E’lon Botga xush kelibsiz!", mainMenu())
+})
+
+// 🔁 Tekshirish
 bot.action("check_sub", async (ctx) => {
-  const isSub = await checkSub(ctx);
+    const subscribed = await isSubscribed(ctx)
 
-  if (!isSub) {
-    return ctx.answerCbQuery("❌ Hali obuna bo‘lmagansiz!", { show_alert: true });
-  }
-
-  await ctx.answerCbQuery("✅ Tasdiqlandi!");
-  await ctx.editMessageText("📸 Endi rasm yuboring.");
-});
-
-/* =========================
-   E’LON YARATISH
-========================= */
-
-bot.on("photo", (ctx) => {
-  ctx.session.photo = ctx.message.photo.at(-1).file_id;
-  ctx.reply("💰 Narxni yozing:");
-});
-
-bot.on("text", async (ctx, next) => {
-
-  if (ctx.session.broadcast && ctx.from.id === ADMIN_ID) {
-    for (let id of users) {
-      try {
-        await ctx.telegram.sendMessage(id, ctx.message.text);
-      } catch {}
+    if (subscribed) {
+        await ctx.editMessageText("✅ Obuna tasdiqlandi!", mainMenu())
+    } else {
+        await ctx.answerCbQuery("❌ Hali obuna bo‘lmagansiz!", { show_alert: true })
     }
-    ctx.session.broadcast = false;
-    return ctx.reply("✅ Barchaga yuborildi");
-  }
+})
 
-  if (!ctx.session.photo) return next();
+// 🔒 Global himoya
+bot.use(async (ctx, next) => {
+    if (!ctx.from) return next()
+    if (ctx.message?.text === "/start") return next()
+    if (ctx.callbackQuery?.data === "check_sub") return next()
 
-  if (!ctx.session.price) {
-    ctx.session.price = ctx.message.text;
-    return ctx.reply("📞 Telefon raqamingizni yozing:");
-  }
+    const subscribed = await isSubscribed(ctx)
 
-  if (!ctx.session.phone) {
-
-    const phone = ctx.message.text;
-
-    if (!/^\+?\d{9,15}$/.test(phone)) {
-      return ctx.reply("❌ Telefon noto‘g‘ri formatda.");
+    if (!subscribed) {
+        await ctx.reply(
+            "❌ Avval e’lon kanaliga obuna bo‘ling!",
+            subscribeButtons()
+        )
+        return
     }
 
-    ctx.session.phone = phone;
+    return next()
+})
 
-    const adId = Date.now();
+// 📢 E’lon berish
+bot.action("create", (ctx) => {
+    ctx.session.creatingAd = true
+    ctx.reply("📢 E’lon matnini yuboring:")
+})
+
+// 📨 E’lon adminga boradi
+bot.on("text", async (ctx) => {
+    if (!ctx.session.creatingAd) return
+
+    ctx.session.creatingAd = false
+
+    const adId = Date.now()
 
     pendingAds.set(adId, {
-      photo: ctx.session.photo,
-      price: ctx.session.price,
-      phone: ctx.session.phone,
-      user: ctx.from.username || "yo‘q"
-    });
+        userId: ctx.from.id,
+        name: ctx.from.first_name,
+        text: ctx.message.text
+    })
 
-    await ctx.telegram.sendPhoto(
-      ADMIN_ID,
-      ctx.session.photo,
-      {
-        caption:
-          `📢 Yangi e’lon\n\n` +
-          `💰 ${ctx.session.price}\n` +
-          `📞 ${ctx.session.phone}\n` +
-          `👤 @${ctx.from.username || "yo‘q"}`,
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback("✅ Tasdiqlash", `approve_${adId}`),
-            Markup.button.callback("❌ Bekor", `reject_${adId}`)
-          ]
+    await bot.telegram.sendMessage(
+        ADMIN_ID,
+`📢 Yangi e’lon:
+
+${ctx.message.text}
+
+👤 ${ctx.from.first_name}
+🆔 ${ctx.from.id}`,
+        Markup.inlineKeyboard([
+            [
+                Markup.button.callback("✅ Tasdiqlash", `approve_${adId}`),
+                Markup.button.callback("❌ Rad etish", `reject_${adId}`)
+            ]
         ])
-      }
-    );
+    )
 
-    ctx.reply("⏳ E’lon admin tasdig‘ini kutmoqda.");
-    ctx.session = {};
-  }
-});
+    ctx.reply("⏳ E’lon adminga yuborildi.")
+})
 
-/* =========================
-   ADMIN TASDIQLASH
-========================= */
-
+// ✅ Tasdiqlash
 bot.action(/approve_(.+)/, async (ctx) => {
+    if (ctx.from.id !== ADMIN_ID) return
 
-  const adId = Number(ctx.match[1]);
-  const ad = pendingAds.get(adId);
+    const adId = Number(ctx.match[1])
+    const ad = pendingAds.get(adId)
+    if (!ad) return
 
-  if (!ad) return;
+    await bot.telegram.sendMessage(
+        ADS_CHANNEL,
+`📢 YANGI E’LON
 
-  await ctx.telegram.sendPhoto(
-    CHANNEL,
-    ad.photo,
-    {
-      caption:
-        `💰 ${ad.price}\n\n` +
-        `📞 ${ad.phone}`
-    }
-  );
+${ad.text}
 
-  pendingAds.delete(adId);
+👤 ${ad.name}`
+    )
 
-  await ctx.answerCbQuery("Kanalga joylandi ✅");
-  await ctx.editMessageReplyMarkup();
-});
+    await bot.telegram.sendMessage(ad.userId, "✅ E’loningiz tasdiqlandi!")
 
+    pendingAds.delete(adId)
+    ctx.editMessageText("✅ Tasdiqlandi.")
+})
+
+// ❌ Rad etish
 bot.action(/reject_(.+)/, async (ctx) => {
-  const adId = Number(ctx.match[1]);
-  pendingAds.delete(adId);
+    if (ctx.from.id !== ADMIN_ID) return
 
-  await ctx.answerCbQuery("Rad etildi ❌");
-  await ctx.editMessageReplyMarkup();
-});
+    const adId = Number(ctx.match[1])
+    const ad = pendingAds.get(adId)
+    if (!ad) return
 
-/* =========================
-   ADMIN PANEL
-========================= */
+    await bot.telegram.sendMessage(ad.userId, "❌ E’loningiz rad etildi.")
 
-bot.command("admin", (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
+    pendingAds.delete(adId)
+    ctx.editMessageText("❌ Rad etildi.")
+})
 
-  ctx.reply(
-    "🎛 Admin panel",
-    Markup.keyboard([
-      ["📊 Statistika"],
-      ["📢 Broadcast"]
-    ]).resize()
-  );
-});
+// 👤 Profil
+bot.action("profile", (ctx) => {
+    ctx.reply(`👤 Sizning ID: ${ctx.from.id}`)
+})
 
-bot.hears("📊 Statistika", (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-
-  ctx.reply(`👥 Foydalanuvchilar: ${users.size}`);
-});
-
-bot.hears("📢 Broadcast", (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-
-  ctx.session.broadcast = true;
-  ctx.reply("Yuboriladigan xabarni yozing:");
-});
-
-/* ========================= */
-
-bot.launch();
-console.log("🚀 E’lon bot ishga tushdi");
-
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+bot.launch()
+console.log("🚀 E’LON BOT ISHLADI")
