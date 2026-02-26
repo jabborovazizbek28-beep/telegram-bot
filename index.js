@@ -1,92 +1,46 @@
-require("dotenv").config()
 const { Telegraf, Markup, session } = require("telegraf")
 const express = require("express")
 
-// 🔥 TOKENNI ENV DAN OLADI
-const bot = new Telegraf(process.env.BOT_TOKEN)
+// 🔥 O‘Z MA’LUMOTLARINGIZNI YOZING
+const bot = new Telegraf("8699404271:AAHOlXnkHVxAGhqG4g6LJatZDjKQP2hSzWY")
+
+const ADMIN_ID = 6952175243
+const ADS_CHANNEL = "@Telefon_bozor_Qarshi_n1"
+const CHANNEL_LINK = "https://t.me/Telefon_bozor_Qarshi_n1"
+const RENDER_URL = "https://telegram-bot-ldyk.onrender.com"
 
 const app = express()
 bot.use(session())
 
-// 🔥 ENV DAN OLINADI
-const ADMIN_ID = Number(process.env.ADMIN_ID)
-const ADS_CHANNEL = process.env.ADS_CHANNEL
-const CHANNEL_LINK = process.env.CHANNEL_LINK
-const RENDER_URL = process.env.RENDER_URL
-
 const pendingAds = new Map()
 
 // =====================
-// 🔒 OBUNA TEKSHIRISH
+// START
 // =====================
-async function isSubscribed(ctx) {
-    try {
-        const member = await ctx.telegram.getChatMember(ADS_CHANNEL, ctx.from.id)
-        return member.status !== "left"
-    } catch (err) {
-        console.log("Subscription error:", err)
-        return false
-    }
-}
-
-function subscribeButtons() {
-    return Markup.inlineKeyboard([
-        [Markup.button.url("📢 Kanalga obuna bo‘lish", CHANNEL_LINK)],
-        [Markup.button.callback("✅ Tekshirish", "check_sub")]
-    ])
-}
-
-function mainMenu() {
-    return Markup.inlineKeyboard([
-        [Markup.button.callback("📢 E’lon berish", "create")],
-        [Markup.button.callback("👤 Profil", "profile")]
-    ])
-}
-
-// =====================
-// 🚀 START
-// =====================
-bot.start(async (ctx) => {
-    const subscribed = await isSubscribed(ctx)
-
-    if (!subscribed) {
-        return ctx.reply(
-            "📢 Botdan foydalanish uchun kanalga obuna bo‘ling.",
-            subscribeButtons()
-        )
-    }
-
-    ctx.reply("🚀 Xush kelibsiz!", mainMenu())
+bot.start((ctx) => {
+    ctx.reply(
+        "🚀 Botga xush kelibsiz!",
+        Markup.inlineKeyboard([
+            [Markup.button.callback("📢 E’lon berish", "create")]
+        ])
+    )
 })
 
 // =====================
-// 🔁 OBUNANI TEKSHIRISH
-// =====================
-bot.action("check_sub", async (ctx) => {
-    const subscribed = await isSubscribed(ctx)
-
-    if (subscribed) {
-        await ctx.editMessageText("✅ Obuna tasdiqlandi!", mainMenu())
-    } else {
-        await ctx.answerCbQuery("❌ Hali obuna bo‘lmagansiz!", { show_alert: true })
-    }
-})
-
-// =====================
-// 📢 E’LON YARATISH
+// E’LON YOZISH
 // =====================
 bot.action("create", (ctx) => {
-    ctx.session.creatingAd = true
-    ctx.reply("📢 E’lon matnini yuboring:")
+    ctx.session.creating = true
+    ctx.reply("📩 E’lon matnini yuboring:")
 })
 
 // =====================
-// 📨 E’LONNI ADMINGA YUBORISH
+// MATN QABUL QILISH
 // =====================
 bot.on("text", async (ctx) => {
-    if (!ctx.session.creatingAd) return
+    if (!ctx.session.creating) return
 
-    ctx.session.creatingAd = false
+    ctx.session.creating = false
 
     const adId = Date.now()
 
@@ -98,12 +52,7 @@ bot.on("text", async (ctx) => {
 
     await bot.telegram.sendMessage(
         ADMIN_ID,
-`📢 Yangi e’lon:
-
-${ctx.message.text}
-
-👤 ${ctx.from.first_name}
-🆔 ${ctx.from.id}`,
+        `📢 Yangi e’lon:\n\n${ctx.message.text}\n\n👤 ${ctx.from.first_name}`,
         Markup.inlineKeyboard([
             [
                 Markup.button.callback("✅ Tasdiqlash", `approve_${adId}`),
@@ -116,10 +65,12 @@ ${ctx.message.text}
 })
 
 // =====================
-// ✅ TASDIQLASH
+// TASDIQLASH
 // =====================
 bot.action(/approve_(.+)/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return
+    if (ctx.from.id !== ADMIN_ID) {
+        return ctx.reply("❌ Siz admin emassiz")
+    }
 
     const adId = Number(ctx.match[1])
     const ad = pendingAds.get(adId)
@@ -128,11 +79,7 @@ bot.action(/approve_(.+)/, async (ctx) => {
     try {
         await bot.telegram.sendMessage(
             ADS_CHANNEL,
-`📢 YANGI E’LON
-
-${ad.text}
-
-👤 ${ad.name}`
+            `📢 YANGI E’LON\n\n${ad.text}\n\n👤 ${ad.name}`
         )
 
         await bot.telegram.sendMessage(ad.userId, "✅ E’loningiz tasdiqlandi!")
@@ -140,17 +87,19 @@ ${ad.text}
         pendingAds.delete(adId)
         ctx.editMessageText("✅ Tasdiqlandi.")
 
-    } catch (error) {
-        console.log("Channel error:", error)
+    } catch (err) {
+        console.log(err)
         ctx.reply("❌ Kanalga yuborishda xatolik!")
     }
 })
 
 // =====================
-// ❌ RAD ETISH
+// RAD ETISH
 // =====================
 bot.action(/reject_(.+)/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return
+    if (ctx.from.id !== ADMIN_ID) {
+        return ctx.reply("❌ Siz admin emassiz")
+    }
 
     const adId = Number(ctx.match[1])
     const ad = pendingAds.get(adId)
@@ -163,21 +112,12 @@ bot.action(/reject_(.+)/, async (ctx) => {
 })
 
 // =====================
-// 👤 PROFIL
-// =====================
-bot.action("profile", (ctx) => {
-    ctx.reply(`👤 Sizning ID: ${ctx.from.id}`)
-})
-
-// =====================
-// 🌍 WEBHOOK (RENDER)
+// WEBHOOK (RENDER)
 // =====================
 app.use(bot.webhookCallback("/webhook"))
 
 app.listen(process.env.PORT || 10000, async () => {
-    console.log("🚀 Bot Render’da ishladi")
+    console.log("🚀 Bot ishladi")
 
-    await bot.telegram.setWebhook(
-        `${RENDER_URL}/webhook`
-    )
+    await bot.telegram.setWebhook(`${RENDER_URL}/webhook`)
 })
