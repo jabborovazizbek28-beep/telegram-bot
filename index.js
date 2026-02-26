@@ -1,112 +1,148 @@
 require("dotenv").config();
-
 const { Telegraf, Markup, session } = require("telegraf");
+const express = require("express");
 
-const token = process.env.BOT_TOKEN;
-const CHANNEL = process.env.CHANNEL;
-const ADMIN_ID = Number(process.env.ADMIN_ID);
-
-if (!token) {
-  console.error("❌ BOT_TOKEN topilmadi!");
+// =====================
+// ENV CHECK
+// =====================
+if (!process.env.BOT_TOKEN) {
+  console.error("❌ BOT_TOKEN yo‘q");
   process.exit(1);
 }
 
-const bot = new Telegraf(token);
+const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(session());
 
-bot.catch((err) => {
-  console.error("🚨 Bot xatosi:", err);
+const CHANNEL = process.env.CHANNEL;
+
+// =====================
+// EXPRESS SERVER (MUHIM)
+// =====================
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("🚀 Bot ishlayapti");
 });
 
-bot.start((ctx) => {
-  ctx.session = {};
-  ctx.reply("📸 E’lon joylash uchun rasm yuboring.");
+app.listen(PORT, () => {
+  console.log("🌍 Server port:", PORT);
 });
 
-// RASM
-bot.on("photo", (ctx) => {
-  ctx.session.photo = ctx.message.photo.at(-1).file_id;
-  ctx.reply("💰 Endi narxni yozing.");
-});
+// =====================
+// SUBSCRIPTION CHECK
+// =====================
+async function isSubscribed(ctx) {
+  if (!CHANNEL) return true;
 
-// TEXT FLOW
-bot.on("text", async (ctx) => {
-  if (!ctx.session.photo) return;
-
-  if (!ctx.session.price) {
-    ctx.session.price = ctx.message.text;
-    return ctx.reply("📞 Telefon raqamingizni yozing.");
-  }
-
-  if (!ctx.session.phone) {
-    const phone = ctx.message.text;
-
-    if (!/^\+?\d{9,15}$/.test(phone)) {
-      return ctx.reply("❌ Telefon noto‘g‘ri formatda.");
-    }
-
-    ctx.session.phone = phone;
-
-    const data = Buffer.from(
-      JSON.stringify({
-        photo: ctx.session.photo,
-        price: ctx.session.price,
-        phone: ctx.session.phone
-      })
-    ).toString("base64");
-
-    await ctx.telegram.sendPhoto(
-      ADMIN_ID,
-      ctx.session.photo,
-      {
-        caption:
-          `📢 YANGI ELON\n\n` +
-          `💰 Narx: ${ctx.session.price}\n` +
-          `📞 Telefon: ${ctx.session.phone}\n` +
-          `👤 @${ctx.from.username || "yo'q"}`,
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback("✅ Tasdiqlash", `approve_${data}`),
-            Markup.button.callback("❌ Bekor", `reject`)
-          ]
-        ])
-      }
+  try {
+    const member = await ctx.telegram.getChatMember(
+      CHANNEL,
+      ctx.from.id
     );
 
-    ctx.reply("⏳ E’lon admin tasdig‘ini kutmoqda.");
+    return ["member", "administrator", "creator"].includes(member.status);
+  } catch {
+    return false;
+  }
+}
+
+async function requireSub(ctx, next) {
+  const ok = await isSubscribed(ctx);
+
+  if (!ok) {
+    return ctx.reply(
+      "🔒 Kanalga obuna bo‘ling:",
+      Markup.inlineKeyboard([
+        [
+          Markup.button.url(
+            "📢 Kanal",
+            `https://t.me/${CHANNEL.replace("@", "")}`
+          )
+        ],
+        [Markup.button.callback("🔄 Tekshirish", "check")]
+      ])
+    );
+  }
+
+  return next();
+}
+
+// =====================
+// START
+// =====================
+bot.start(requireSub, (ctx) => {
+  ctx.session = {};
+
+  ctx.reply(
+    "💎 ULTRA MARKETPLACE",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("➕ E’lon joylash", "create")]
+    ])
+  );
+});
+
+// =====================
+// CREATE
+// =====================
+bot.action("create", requireSub, (ctx) => {
+  ctx.session = { step: "photo" };
+  ctx.answerCbQuery();
+  ctx.reply("📸 Rasm yuboring:");
+});
+
+// =====================
+// PHOTO
+// =====================
+bot.on("photo", (ctx) => {
+  if (!ctx.session || ctx.session.step !== "photo") return;
+
+  ctx.session.photo = ctx.message.photo.at(-1).file_id;
+  ctx.session.step = "model";
+
+  ctx.reply("📱 Model yozing:");
+});
+
+// =====================
+// TEXT FLOW
+// =====================
+bot.on("text", (ctx) => {
+  if (!ctx.session || !ctx.session.step) return;
+
+  const text = ctx.message.text.trim();
+
+  if (ctx.session.step === "model") {
+    ctx.session.model = text;
+    ctx.session.step = "description";
+    return ctx.reply("📝 Tavsif yozing:");
+  }
+
+  if (ctx.session.step === "description") {
+    ctx.session.description = text;
+    ctx.session.step = "price";
+    return ctx.reply("💰 Narx yozing:");
+  }
+
+  if (ctx.session.step === "price") {
+    if (!/^\d+$/.test(text))
+      return ctx.reply("❌ Narx faqat raqam bo‘lsin");
+
+    ctx.reply("✅ E’lon qabul qilindi!");
+
     ctx.session = {};
   }
 });
 
-// TASDIQLASH
-bot.action(/approve_(.+)/, async (ctx) => {
-
-  const decoded = JSON.parse(
-    Buffer.from(ctx.match[1], "base64").toString()
-  );
-
-  await ctx.telegram.sendPhoto(
-    CHANNEL,
-    decoded.photo,
-    {
-      caption:
-        `💰 ${decoded.price}\n\n` +
-        `📞 Aloqa: ${decoded.phone}`
-    }
-  );
-
-  await ctx.answerCbQuery("Kanalga joylandi ✅");
-  ctx.editMessageReplyMarkup();
+// =====================
+// ERROR HANDLER
+// =====================
+bot.catch((err) => {
+  console.error("🚨 Xato:", err);
 });
 
-// BEKOR
-bot.action("reject", async (ctx) => {
-  await ctx.answerCbQuery("Bekor qilindi ❌");
-  ctx.editMessageReplyMarkup();
-});
-
+// =====================
+// START BOT
+// =====================
 bot.launch();
-console.log("🚀 Professional bot ishga tushdi");
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+console.log("💎 WEB SERVICE BOT READY");
