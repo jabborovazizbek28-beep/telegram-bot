@@ -1,51 +1,34 @@
 require("dotenv").config()
 
 const { Telegraf, Markup, session } = require("telegraf")
-const express = require("express")
 
 const bot = new Telegraf(process.env.BOT_TOKEN)
 
-const app = express()
+const ADMIN_ID = 6952175243
+const ADS_CHANNEL = "@Telefon_bozor_Qarshi_n1"
+
 bot.use(session())
 
-const ADMIN_ID = 6952175243
-const CHANNEL = "@Telefon_bozor_Qarshi_n1"
-const RENDER_URL = process.env.RENDER_URL
-
 const pendingAds = new Map()
-const adsStats = new Map()
 
 // ================= START =================
-bot.start((ctx) => {
-    ctx.session.lang = ctx.session.lang || "uz"
-
-    ctx.reply("🚀 Menu", Markup.inlineKeyboard([
-        [Markup.button.callback("📢 E’lon", "create")],
-        [Markup.button.callback("👤 Profil", "profile")],
-        [Markup.button.callback("🌍 Til", "language")]
-    ]))
-})
-
-// ================= LANGUAGE =================
-bot.action("language", (ctx) => {
-    ctx.reply("Tilni tanlang:", Markup.inlineKeyboard([
-        [
-            Markup.button.callback("🇺🇿 UZ", "lang_uz"),
-            Markup.button.callback("🇷🇺 RU", "lang_ru"),
-            Markup.button.callback("🇬🇧 EN", "lang_en")
-        ]
-    ]))
-})
-
-bot.action(/lang_(.+)/, (ctx) => {
-    ctx.session.lang = ctx.match[1]
-    ctx.answerCbQuery("✅ Saqlandi")
+bot.start(async (ctx) => {
+    await ctx.reply(
+        "🚀 Xush kelibsiz!",
+        Markup.inlineKeyboard([
+            [Markup.button.callback("📢 E’lon berish", "create")],
+            [Markup.button.callback("👤 Profil", "profile")]
+        ])
+    )
 })
 
 // ================= CREATE =================
-bot.action("create", (ctx) => {
+bot.action("create", async (ctx) => {
+    await ctx.answerCbQuery()
+
     ctx.session.creating = true
-    ctx.reply("📩 E’lon matnini yuboring:")
+
+    await ctx.reply("📩 E’lon matnini yuboring:")
 })
 
 // ================= TEXT =================
@@ -61,8 +44,7 @@ bot.on("text", async (ctx) => {
         name: ctx.from.first_name,
         text: ctx.message.text,
         likes: 0,
-        views: 0,
-        premium: false
+        views: 0
     })
 
     await bot.telegram.sendMessage(
@@ -70,99 +52,81 @@ bot.on("text", async (ctx) => {
         `📢 Yangi e’lon:\n\n${ctx.message.text}`,
         Markup.inlineKeyboard([
             [
-                Markup.button.callback("✅ Tasdiq", `approve_${adId}`),
-                Markup.button.callback("❌ Rad", `reject_${adId}`)
+                Markup.button.callback("✅ Tasdiqlash", `approve_${adId}`),
+                Markup.button.callback("❌ Rad etish", `reject_${adId}`)
             ]
         ])
     )
 
-    ctx.reply("⏳ Admin ko‘rib chiqadi.")
+    await ctx.reply("⏳ E’lon adminga yuborildi.")
 })
 
 // ================= APPROVE =================
 bot.action(/approve_(.+)/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("⛔ Admin emas")
+    await ctx.answerCbQuery()
+
+    if (ctx.from.id !== ADMIN_ID)
+        return ctx.answerCbQuery("⛔ Siz admin emassiz")
 
     const adId = Number(ctx.match[1])
     const ad = pendingAds.get(adId)
     if (!ad) return
 
     await bot.telegram.sendMessage(
-        CHANNEL,
-        `📢 YANGI E’LON\n\n${ad.text}\n\n👤 ${ad.name}\n👁 0 ❤️ 0`,
+        ADS_CHANNEL,
+        `📢 YANGI E’LON\n\n${ad.text}\n\n👤 ${ad.name}`,
         Markup.inlineKeyboard([
             [
-                Markup.button.callback("❤️ Like", `like_${adId}`),
-                Markup.button.callback("👁 View", `view_${adId}`)
+                Markup.button.callback("❤️ Like", `like_${adId}`)
             ]
         ])
     )
 
     pendingAds.delete(adId)
-    ctx.editMessageText("✅ Tasdiqlandi")
+
+    await ctx.editMessageText("✅ Tasdiqlandi")
 })
 
 // ================= REJECT =================
 bot.action(/reject_(.+)/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return
+    await ctx.answerCbQuery()
+
+    if (ctx.from.id !== ADMIN_ID)
+        return ctx.answerCbQuery("⛔ Siz admin emassiz")
 
     const adId = Number(ctx.match[1])
     const ad = pendingAds.get(adId)
     if (!ad) return
 
-    await bot.telegram.sendMessage(ad.userId, "❌ Rad etildi")
+    await bot.telegram.sendMessage(ad.userId, "❌ E’lon rad etildi.")
+
     pendingAds.delete(adId)
 
-    ctx.editMessageText("❌ Rad etildi")
+    await ctx.editMessageText("❌ Rad etildi")
 })
 
 // ================= LIKE =================
 bot.action(/like_(.+)/, async (ctx) => {
-    const adId = Number(ctx.match[1])
-    const ad = pendingAds.get(adId)
-
-    if (!ad) return ctx.answerCbQuery("Topilmadi")
-
-    ad.likes++
-    ctx.answerCbQuery("❤️ Yoqdi")
-})
-
-// ================= VIEW =================
-bot.action(/view_(.+)/, async (ctx) => {
-    const adId = Number(ctx.match[1])
-    const ad = pendingAds.get(adId)
-
-    if (!ad) return
-
-    ad.views++
-    ctx.answerCbQuery("👁 Ko‘rildi")
+    await ctx.answerCbQuery("❤️ Yoqdi")
 })
 
 // ================= PROFILE =================
-bot.action("profile", (ctx) => {
-    ctx.reply(`👤 ID: ${ctx.from.id}`)
+bot.action("profile", async (ctx) => {
+    await ctx.answerCbQuery()
+
+    await ctx.reply(`👤 Sizning ID: ${ctx.from.id}`)
 })
 
-// ================= ADMIN PANEL =================
-bot.command("admin", (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return
-
-    ctx.reply("🛠 Admin Panel", Markup.inlineKeyboard([
-        [Markup.button.callback("📊 Statistika", "stats")]
-    ]))
+// ================= ERROR HANDLER =================
+bot.catch((err) => {
+    console.log("XATO:", err)
 })
 
-bot.action("stats", (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return
+// ================= START BOT =================
+bot.launch()
 
-    ctx.reply(`📊 E’lonlar soni: ${pendingAds.size}`)
-})
+console.log("🚀 Bot ishga tushdi")
 
-// ================= WEBHOOK =================
-app.use(bot.webhookCallback("/webhook"))
-
-app.listen(process.env.PORT || 10000, async () => {
-    console.log("🚀 Bot ishladi")
-
-    await bot.telegram.setWebhook(`${RENDER_URL}/webhook`)
-})
+// Graceful stop
+process.once("SIGINT", () => bot.stop("SIGINT"))
+process.once("SIGTERM", () => bot.stop("SIGTERM"))
