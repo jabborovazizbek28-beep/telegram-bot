@@ -2,24 +2,29 @@ require("dotenv").config()
 const { Telegraf, Markup, session } = require("telegraf")
 const express = require("express")
 
+// 🔥 TOKENNI ENV DAN OLADI
 const bot = new Telegraf(process.env.BOT_TOKEN)
-const app = express()
 
+const app = express()
 bot.use(session())
 
+// 🔥 ENV DAN OLINADI
 const ADMIN_ID = Number(process.env.ADMIN_ID)
 const ADS_CHANNEL = process.env.ADS_CHANNEL
 const CHANNEL_LINK = process.env.CHANNEL_LINK
-const URL = process.env.RENDER_URL
+const RENDER_URL = process.env.RENDER_URL
 
 const pendingAds = new Map()
 
-// 🔒 Obuna tekshirish
+// =====================
+// 🔒 OBUNA TEKSHIRISH
+// =====================
 async function isSubscribed(ctx) {
     try {
         const member = await ctx.telegram.getChatMember(ADS_CHANNEL, ctx.from.id)
         return member.status !== "left"
-    } catch {
+    } catch (err) {
+        console.log("Subscription error:", err)
         return false
     }
 }
@@ -38,21 +43,25 @@ function mainMenu() {
     ])
 }
 
+// =====================
 // 🚀 START
+// =====================
 bot.start(async (ctx) => {
     const subscribed = await isSubscribed(ctx)
 
     if (!subscribed) {
         return ctx.reply(
-            "📢 Botdan foydalanish uchun e’lon kanaliga obuna bo‘ling.",
+            "📢 Botdan foydalanish uchun kanalga obuna bo‘ling.",
             subscribeButtons()
         )
     }
 
-    ctx.reply("🚀 E’lon Botga xush kelibsiz!", mainMenu())
+    ctx.reply("🚀 Xush kelibsiz!", mainMenu())
 })
 
-// 🔁 Tekshirish
+// =====================
+// 🔁 OBUNANI TEKSHIRISH
+// =====================
 bot.action("check_sub", async (ctx) => {
     const subscribed = await isSubscribed(ctx)
 
@@ -63,31 +72,17 @@ bot.action("check_sub", async (ctx) => {
     }
 })
 
-// 🔒 Global himoya
-bot.use(async (ctx, next) => {
-    if (!ctx.from) return next()
-    if (ctx.message?.text === "/start") return next()
-    if (ctx.callbackQuery?.data === "check_sub") return next()
-
-    const subscribed = await isSubscribed(ctx)
-
-    if (!subscribed) {
-        return ctx.reply(
-            "❌ Avval e’lon kanaliga obuna bo‘ling!",
-            subscribeButtons()
-        )
-    }
-
-    return next()
-})
-
-// 📢 E’lon berish
+// =====================
+// 📢 E’LON YARATISH
+// =====================
 bot.action("create", (ctx) => {
     ctx.session.creatingAd = true
     ctx.reply("📢 E’lon matnini yuboring:")
 })
 
-// 📨 E’lon adminga
+// =====================
+// 📨 E’LONNI ADMINGA YUBORISH
+// =====================
 bot.on("text", async (ctx) => {
     if (!ctx.session.creatingAd) return
 
@@ -120,7 +115,9 @@ ${ctx.message.text}
     ctx.reply("⏳ E’lon adminga yuborildi.")
 })
 
-// ✅ Tasdiqlash
+// =====================
+// ✅ TASDIQLASH
+// =====================
 bot.action(/approve_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return
 
@@ -128,22 +125,30 @@ bot.action(/approve_(.+)/, async (ctx) => {
     const ad = pendingAds.get(adId)
     if (!ad) return
 
-    await bot.telegram.sendMessage(
-        ADS_CHANNEL,
+    try {
+        await bot.telegram.sendMessage(
+            ADS_CHANNEL,
 `📢 YANGI E’LON
 
 ${ad.text}
 
 👤 ${ad.name}`
-    )
+        )
 
-    await bot.telegram.sendMessage(ad.userId, "✅ E’loningiz tasdiqlandi!")
+        await bot.telegram.sendMessage(ad.userId, "✅ E’loningiz tasdiqlandi!")
 
-    pendingAds.delete(adId)
-    ctx.editMessageText("✅ Tasdiqlandi.")
+        pendingAds.delete(adId)
+        ctx.editMessageText("✅ Tasdiqlandi.")
+
+    } catch (error) {
+        console.log("Channel error:", error)
+        ctx.reply("❌ Kanalga yuborishda xatolik!")
+    }
 })
 
-// ❌ Rad etish
+// =====================
+// ❌ RAD ETISH
+// =====================
 bot.action(/reject_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return
 
@@ -157,19 +162,22 @@ bot.action(/reject_(.+)/, async (ctx) => {
     ctx.editMessageText("❌ Rad etildi.")
 })
 
-// 👤 Profil
+// =====================
+// 👤 PROFIL
+// =====================
 bot.action("profile", (ctx) => {
     ctx.reply(`👤 Sizning ID: ${ctx.from.id}`)
 })
 
-/* =========================
-   🌍 WEBHOOK (RENDER UCHUN)
-========================= */
-
+// =====================
+// 🌍 WEBHOOK (RENDER)
+// =====================
 app.use(bot.webhookCallback("/webhook"))
 
 app.listen(process.env.PORT || 10000, async () => {
-    console.log("💎 RENDER READY BOT")
+    console.log("🚀 Bot Render’da ishladi")
 
-    await bot.telegram.setWebhook(`${URL}/webhook`)
+    await bot.telegram.setWebhook(
+        `${RENDER_URL}/webhook`
+    )
 })
