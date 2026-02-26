@@ -1,16 +1,20 @@
 require("dotenv").config()
 const { Telegraf, Markup, session } = require("telegraf")
+const express = require("express")
 
 const bot = new Telegraf(process.env.BOT_TOKEN)
+const app = express()
+
 bot.use(session())
 
 const ADMIN_ID = Number(process.env.ADMIN_ID)
 const ADS_CHANNEL = process.env.ADS_CHANNEL
 const CHANNEL_LINK = process.env.CHANNEL_LINK
+const URL = process.env.RENDER_URL
 
 const pendingAds = new Map()
 
-// 🔒 Faqat e’lon kanaliga obuna tekshiramiz
+// 🔒 Obuna tekshirish
 async function isSubscribed(ctx) {
     try {
         const member = await ctx.telegram.getChatMember(ADS_CHANNEL, ctx.from.id)
@@ -68,11 +72,10 @@ bot.use(async (ctx, next) => {
     const subscribed = await isSubscribed(ctx)
 
     if (!subscribed) {
-        await ctx.reply(
+        return ctx.reply(
             "❌ Avval e’lon kanaliga obuna bo‘ling!",
             subscribeButtons()
         )
-        return
     }
 
     return next()
@@ -84,7 +87,7 @@ bot.action("create", (ctx) => {
     ctx.reply("📢 E’lon matnini yuboring:")
 })
 
-// 📨 E’lon adminga boradi
+// 📨 E’lon adminga
 bot.on("text", async (ctx) => {
     if (!ctx.session.creatingAd) return
 
@@ -159,5 +162,14 @@ bot.action("profile", (ctx) => {
     ctx.reply(`👤 Sizning ID: ${ctx.from.id}`)
 })
 
-bot.launch()
-console.log("🚀 E’LON BOT ISHLADI")
+/* =========================
+   🌍 WEBHOOK (RENDER UCHUN)
+========================= */
+
+app.use(bot.webhookCallback("/webhook"))
+
+app.listen(process.env.PORT || 10000, async () => {
+    console.log("💎 RENDER READY BOT")
+
+    await bot.telegram.setWebhook(`${URL}/webhook`)
+})
