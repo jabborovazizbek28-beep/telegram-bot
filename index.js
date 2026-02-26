@@ -1,39 +1,37 @@
-require("dotenv").config();
-
 const express = require("express");
 const { Telegraf, Markup } = require("telegraf");
 
-// =============================
+// =====================
 // ENV CHECK
-// =============================
+// =====================
 if (!process.env.BOT_TOKEN) {
-  console.error("❌ BOT_TOKEN topilmadi!");
+  console.error("❌ BOT_TOKEN yo‘q!");
   process.exit(1);
 }
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const bot = new Telegraf(process.env.BOT_TOKEN);
 const CHANNEL = process.env.CHANNEL;
 const ADMIN_ID = Number(process.env.ADMIN_ID);
 
-const bot = new Telegraf(BOT_TOKEN);
-
-// =============================
-// EXPRESS (RENDER WEB SERVICE)
-// =============================
+// =====================
+// EXPRESS (RENDER UCHUN MUHIM)
+// =====================
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+// Render PORT beradi!
+const PORT = process.env.PORT;
 
 app.get("/", (req, res) => {
-  res.status(200).send("🚀 BOT ONLINE");
+  res.send("🚀 Bot ishlayapti");
 });
 
 app.listen(PORT, () => {
   console.log("🌍 Server port:", PORT);
 });
 
-// =============================
+// =====================
 // SUBSCRIPTION CHECK
-// =============================
+// =====================
 async function isSubscribed(ctx) {
   if (!CHANNEL) return true;
 
@@ -44,21 +42,25 @@ async function isSubscribed(ctx) {
     );
 
     return ["member", "administrator", "creator"].includes(member.status);
-  } catch {
+  } catch (err) {
+    console.log("Subscription error:", err.message);
     return false;
   }
 }
 
-async function requireSubscription(ctx, next) {
+// =====================
+// START
+// =====================
+bot.start(async (ctx) => {
   const ok = await isSubscribed(ctx);
 
   if (!ok) {
     return ctx.reply(
-      "🔒 Botdan foydalanish uchun kanalga obuna bo‘ling:",
+      "🔒 Botdan foydalanish uchun kanalga obuna bo‘ling.",
       Markup.inlineKeyboard([
         [
           Markup.button.url(
-            "📢 Kanalga o‘tish",
+            "📢 Kanal",
             `https://t.me/${CHANNEL?.replace("@", "")}`
           )
         ],
@@ -67,15 +69,8 @@ async function requireSubscription(ctx, next) {
     );
   }
 
-  return next();
-}
-
-// =============================
-// START
-// =============================
-bot.start(requireSubscription, (ctx) => {
   ctx.reply(
-    "💎 <b>PRO MARKET BOT</b>\n\nMenyuni tanlang:",
+    "💎 <b>PRO BOT</b>\n\nMenyuni tanlang:",
     {
       parse_mode: "HTML",
       ...Markup.inlineKeyboard([
@@ -85,31 +80,29 @@ bot.start(requireSubscription, (ctx) => {
   );
 });
 
-// =============================
-// CHECK SUB BUTTON
-// =============================
+// =====================
+// CHECK BUTTON
+// =====================
 bot.action("check_sub", async (ctx) => {
   const ok = await isSubscribed(ctx);
 
   if (!ok) return ctx.answerCbQuery("❌ Obuna yo‘q");
 
   ctx.answerCbQuery("✅ Tasdiqlandi");
+  ctx.reply("🚀 /start bosing");
 });
 
-// =============================
-// NEW AD FLOW
-// =============================
+// =====================
+// SIMPLE AD FLOW
+// =====================
 const sessions = new Map();
 
-bot.action("new_ad", requireSubscription, (ctx) => {
+bot.action("new_ad", (ctx) => {
   sessions.set(ctx.from.id, { step: "photo" });
   ctx.answerCbQuery();
   ctx.reply("📸 Rasm yuboring:");
 });
 
-// =============================
-// PHOTO
-// =============================
 bot.on("photo", (ctx) => {
   const session = sessions.get(ctx.from.id);
   if (!session || session.step !== "photo") return;
@@ -120,9 +113,6 @@ bot.on("photo", (ctx) => {
   ctx.reply("📱 Model yozing:");
 });
 
-// =============================
-// TEXT FLOW
-// =============================
 bot.on("text", async (ctx) => {
   const session = sessions.get(ctx.from.id);
   if (!session) return;
@@ -131,12 +121,6 @@ bot.on("text", async (ctx) => {
 
   if (session.step === "model") {
     session.model = text;
-    session.step = "description";
-    return ctx.reply("📝 Tavsif yozing:");
-  }
-
-  if (session.step === "description") {
-    session.description = text;
     session.step = "price";
     return ctx.reply("💰 Narx yozing:");
   }
@@ -147,7 +131,6 @@ bot.on("text", async (ctx) => {
 
     session.price = text;
 
-    // Admin ga yuborish
     if (ADMIN_ID) {
       await ctx.telegram.sendPhoto(
         ADMIN_ID,
@@ -155,36 +138,20 @@ bot.on("text", async (ctx) => {
         {
           caption:
             `📱 ${session.model}\n\n` +
-            `📝 ${session.description}\n\n` +
-            `💰 ${session.price}`,
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback("✅ Publish", "publish"),
-              Markup.button.callback("❌ Reject", "reject")
-            ]
-          ])
+            `💰 ${session.price}`
         }
       );
     }
 
-    ctx.reply("⏳ Admin tasdig‘ini kutmoqda...");
+    ctx.reply("✅ E’lon yuborildi!");
     sessions.delete(ctx.from.id);
   }
 });
 
-// =============================
-// ERROR HANDLER
-// =============================
-bot.catch((err) => {
-  console.error("🚨 Error:", err);
-});
-
-// =============================
-// START BOT
-// =============================
+// =====================
 bot.launch();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-console.log("💎 FINAL PRO SYSTEM READY");
+console.log("💎 RENDER READY BOT");
